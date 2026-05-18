@@ -1,0 +1,1 @@
+from app.services.recommendations import get_recommendations, INHABITANT_PARAMETERS

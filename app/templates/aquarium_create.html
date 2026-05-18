@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Создание аквариума{% endblock %}
+{% block content %}
+<div class="header">
+    <h1>Новый аквариум</h1>
+</div>
+<div class="card">
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+    <form method="POST">
+        <div class="form-group">
+            <label>Название аквариума</label>
+            <input type="text" name="name" class="form-control" required>
+        </div>
+        <div class="form-group">
+            <label>Основные обитатели</label>
+            <select name="inhabitants" class="form-control">
+                <option value="tropical_fish">Тропические рыбы</option>
+                <option value="goldfish">Золотые рыбки</option>
+                <option value="shrimp">Креветки</option>
+                <option value="cichlids">Цихлиды</option>
+                <option value="plants">Растения</option>
+                <option value="marine">Морской аквариум</option>
+                <option value="">Не выбрано</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Отслеживаемые параметры</label>
+            <div class="checkbox-group">
+                {% for param in parameters %}
+                <label class="checkbox-item">
+                    <input type="checkbox" name="parameters" value="{{ param.id }}">
+                    {{ param.display_name }} ({{ param.unit }})
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="form-group">
+            <label>Фото аквариума</label>
+            <input type="file" id="photo_input" accept="image/jpeg,image/png,image/jpg">
+            <input type="hidden" name="photo" id="photo_base64">
+            <canvas id="photo_preview_canvas" style="display:none;"></canvas>
+            <img id="photo_preview" style="max-width: 200px; margin-top: 10px; display: none;">
+        </div>
+        <div style="display: flex; gap: 10px;">
+            <button type="submit" class="btn">Сохранить</button>
+            <a href="/dashboard" class="btn btn-secondary">Отмена</a>
+        </div>
+        <script>
+            document.getElementById('photo_input').addEventListener('change', function (e) {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = function (event) {
+                        const img = new Image();
+                        img.onload = function () {
+                            const canvas = document.getElementById('photo_preview_canvas');
+                            const ctx = canvas.getContext('2d');
+                            const maxWidth = 300;
+                            const scale = maxWidth / img.width;
+                            canvas.width = maxWidth;
+                            canvas.height = img.height * scale;
+                            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                            const base64 = canvas.toDataURL('image/jpeg', 0.7);
+                            document.getElementById('photo_base64').value = base64;
+                            const preview = document.getElementById('photo_preview');
+                            preview.src = base64;
+                            preview.style.display = 'block';
+                        };
+                        img.src = event.target.result;
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+        </script>
+    </form>
+</div>
+{% endblock %}
