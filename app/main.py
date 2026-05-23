@@ -2,24 +2,30 @@ from fastapi import FastAPI, Depends, HTTPException, status, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, delete
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import json
 import pandas as pd
 import io
+import os
 from typing import List, Optional
+from dotenv import load_dotenv
 
 from app.database import engine, get_db, Base
 from app.models.user import User
 from app.models.aquarium import Aquarium, Parameter, AquariumParameter
 from app.models.measurement import Measurement
-from app.auth import create_user, authenticate_user, get_user_by_username, hash_password, verify_password
+from app.auth_jwt import (
+    create_access_token, decode_token, get_token_from_request,
+    get_current_user_from_token, create_user, authenticate_user,
+    get_user_by_username, hash_password, verify_password
+)
 from app.services.recommendations import get_recommendations, INHABITANT_PARAMETERS
 
+load_dotenv()
+
 app = FastAPI(title="Aquarium Monitor")
-app.add_middleware(SessionMiddleware, secret_key="your-secret-key-here-change-in-production")
 
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
@@ -48,11 +54,7 @@ async def init_parameters(db: AsyncSession):
     await db.commit()
 
 async def get_current_user(request: Request, db: AsyncSession):
-    user_id = request.session.get("user_id")
-    if not user_id:
-        return None
-    result = await db.execute(select(User).where(User.id == user_id))
-    return result.scalar_one_or_none()
+    return await get_current_user_from_token(request, db)
 
 @app.on_event("startup")
 async def startup():
@@ -76,8 +78,16 @@ async def register(request: Request, username: str = Form(...), password: str = 
     if existing:
         return templates.TemplateResponse("register.html", {"request": request, "error": "Пользователь уже существует"})
     user = await create_user(db, username, password)
-    request.session["user_id"] = user.id
-    return RedirectResponse(url="/dashboard", status_code=303)
+    access_token = create_access_token(data={"sub": str(user.id)})
+    response = RedirectResponse(url="/dashboard", status_code=303)
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,
+        max_age=60*60*24*30,
+        samesite="lax"
+    )
+    return response
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request, error: str = None):
@@ -88,8 +98,16 @@ async def login(request: Request, username: str = Form(...), password: str = For
     user = await authenticate_user(db, username, password)
     if not user:
         return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный логин или пароль"})
-    request.session["user_id"] = user.id
-    return RedirectResponse(url="/dashboard", status_code=303)
+    access_token = create_access_token(data={"sub": str(user.id)})
+    response = RedirectResponse(url="/dashboard", status_code=303)
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,
+        max_age=60*60*24*30,
+        samesite="lax"
+    )
+    return response
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request, db: AsyncSession = Depends(get_db)):
@@ -136,14 +154,15 @@ async def create_aquarium_page(request: Request, db: AsyncSession = Depends(get_
 
 @app.post("/aquarium/create")
 async def create_aquarium(request: Request, name: str = Form(...), inhabitants: str = Form(...), parameters: List[int] = Form(...), photo: str = Form(None), db: AsyncSession = Depends(get_db)):
-    if not user:
+    current_user = await get_current_user(request, db)
+    if not current_user:
         return RedirectResponse(url="/login", status_code=303)
     if len(parameters) == 0:
         result = await db.execute(select(Parameter))
         params = result.scalars().all()
         inhabitants_list = list(INHABITANT_PARAMETERS.keys())
         return templates.TemplateResponse("aquarium_create.html", {"request": request, "error": "Выберите хотя бы один параметр", "parameters": params, "inhabitants": inhabitants_list})
-    aquarium = Aquarium(name=name, user_id=user.id, inhabitants=inhabitants, photo=photo if photo and photo.strip() else None)
+    aquarium = Aquarium(name=name, user_id=current_user.id, inhabitants=inhabitants, photo=photo if photo and photo.strip() else None)
     db.add(aquarium)
     await db.flush()
     for param_id in parameters:
@@ -348,5 +367,6 @@ async def export_csv(aquarium_id: int, request: Request, db: AsyncSession = Depe
 
 @app.post("/logout")
 async def logout(request: Request):
-    request.session.clear()
-    return RedirectResponse(url="/", status_code=303)
+    response = RedirectResponse(url="/", status_code=303)
+    response.delete_cookie("access_token")
+    return response

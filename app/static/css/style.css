@@ -85,13 +85,13 @@ body {
 
 .btn-outline {
     background-color: transparent;
-    border: 1px solid #92CAC1;
-    color: #F9FFFE;
+    border: 2px solid #38636a;
+    color: #0b0b0b;
 }
 
 .btn-outline:hover {
-    background-color: #92CAC1;
-    color: #2B5C64;
+    background-color: #d6f9ff;
+    color: #F9FFFE;
 }
 
 .card {

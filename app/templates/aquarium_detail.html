@@ -14,8 +14,7 @@
         {% else %}{{ aquarium.inhabitants or 'Не указаны' }}{% endif %}
     </p>
     <div style="display: flex; gap: 10px; margin-top: 10px;">
-        <a href="/dashboard" class="btn btn-outline" style="background: rgba(255,255,255,0.2);">← К списку
-            аквариумов</a>
+        <a href="/dashboard" class="btn btn-outline" style="background: rgba(255,255,255,0.2);">← К списку аквариумов</a>
         <a href="/profile" class="btn btn-outline" style="background: rgba(255,255,255,0.2);">Личный кабинет</a>
     </div>
 </div>
@@ -37,8 +36,7 @@
         {% for param in parameters %}
         <div class="form-group">
             <label>{{ param.display_name }} ({{ param.unit }})</label>
-            <input type="number" step="any" data-param="{{ param.name }}" class="form-control"
-                placeholder="Введите значение">
+            <input type="number" step="any" data-param="{{ param.name }}" class="form-control" placeholder="Введите значение">
         </div>
         {% endfor %}
         <button onclick="addMeasurement()" class="btn">Сохранить замер</button>
@@ -50,6 +48,12 @@
         <div class="chart-container">
             <canvas id="measurementChart"></canvas>
         </div>
+
+        <div class="form-group">
+            <label>Параметры для отображения</label>
+            <div id="param_checkboxes" class="checkbox-group"></div>
+        </div>
+
         <div class="filter-group">
             <div class="form-group" style="flex:1;">
                 <label>С</label>
@@ -62,12 +66,11 @@
             <button onclick="applyFilter()" class="btn">Применить</button>
             <button onclick="exportData()" class="btn">Экспорт CSV</button>
         </div>
+
         <div class="table-container">
             <table id="measurementsTable">
                 <thead id="tableHeader">
-                    <tr>
-                        <th>Дата</th>
-                    </tr>
+                    <tr><th>Дата</th></tr>
                 </thead>
                 <tbody id="tableBody">
                 </tbody>
@@ -163,11 +166,10 @@
         if (endDate) params.push(`end_date=${endDate}`);
         if (selectedParams.length) {
             params.push(`parameters=${selectedParams.join(',')}`);
+        }
+        if (params.length) {
             pivotUrl += '?' + params.join('&');
             chartUrl += '?' + params.filter(p => !p.startsWith('parameters')).join('&');
-        } else if (params.length) {
-            pivotUrl += '?' + params.join('&');
-            chartUrl += '?' + params.join('&');
         }
 
         fetch(pivotUrl)
