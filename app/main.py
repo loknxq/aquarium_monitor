@@ -1,10 +1,10 @@
 from fastapi import FastAPI, Depends, HTTPException, status, Request, Form
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, delete
-from datetime import datetime, date, timedelta
+from datetime import datetime, date
 import json
 import pandas as pd
 import io
@@ -16,19 +16,22 @@ from app.database import engine, get_db, Base
 from app.models.user import User
 from app.models.aquarium import Aquarium, Parameter, AquariumParameter
 from app.models.measurement import Measurement
-from app.auth_jwt import (
-    create_access_token, decode_token, get_token_from_request,
-    get_current_user_from_token, create_user, authenticate_user,
-    get_user_by_username, hash_password, verify_password
-)
+from app.auth import create_user, authenticate_user, get_user_by_username, hash_password, verify_password
 from app.services.recommendations import get_recommendations, INHABITANT_PARAMETERS
 
 load_dotenv()
 
-app = FastAPI(title="Aquarium Monitor")
+app = FastAPI(title="Aquarium Monitor API")
+
+SECRET_KEY = os.getenv("SECRET_KEY", "mySecretKeyForAquariumApp2026")
+
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=SECRET_KEY,
+    max_age=60 * 60 * 24 * 7
+)
 
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
-templates = Jinja2Templates(directory="app/templates")
 
 PARAMETERS_DB = [
     {"id": 1, "name": "temperature", "display_name": "Температура", "unit": "C"},
@@ -54,7 +57,11 @@ async def init_parameters(db: AsyncSession):
     await db.commit()
 
 async def get_current_user(request: Request, db: AsyncSession):
-    return await get_current_user_from_token(request, db)
+    user_id = request.session.get("user_id")
+    if not user_id:
+        return None
+    result = await db.execute(select(User).where(User.id == user_id))
+    return result.scalar_one_or_none()
 
 @app.on_event("startup")
 async def startup():
@@ -64,173 +71,198 @@ async def startup():
         await init_parameters(db)
         break
 
-@app.get("/", response_class=HTMLResponse)
-async def home(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+# HTML страницы
+@app.get("/")
+async def index():
+    return FileResponse("app/static/index.html")
 
-@app.get("/register", response_class=HTMLResponse)
-async def register_page(request: Request, error: str = None):
-    return templates.TemplateResponse("register.html", {"request": request, "error": error})
+@app.get("/login")
+async def login_page():
+    return FileResponse("app/static/login.html")
 
-@app.post("/register")
+@app.get("/register")
+async def register_page():
+    return FileResponse("app/static/register.html")
+
+@app.get("/dashboard")
+async def dashboard_page():
+    return FileResponse("app/static/dashboard.html")
+
+@app.get("/aquarium/create")
+async def create_aquarium_page():
+    return FileResponse("app/static/aquarium_create.html")
+
+@app.get("/profile")
+async def profile_page():
+    return FileResponse("app/static/profile.html")
+
+@app.get("/aquarium/{aquarium_id}")
+async def aquarium_detail_page():
+    return FileResponse("app/static/aquarium_detail.html")
+
+# API маршруты
+@app.get("/api/user")
+async def get_user(request: Request, db: AsyncSession = Depends(get_db)):
+    user = await get_current_user(request, db)
+    if not user:
+        return JSONResponse(status_code=401, content={"error": "Not authenticated"})
+    return JSONResponse(content={"id": user.id, "username": user.username})
+
+@app.post("/api/register")
 async def register(request: Request, username: str = Form(...), password: str = Form(...), db: AsyncSession = Depends(get_db)):
     existing = await get_user_by_username(db, username)
     if existing:
-        return templates.TemplateResponse("register.html", {"request": request, "error": "Пользователь уже существует"})
+        return JSONResponse(status_code=400, content={"error": "Пользователь уже существует"})
     user = await create_user(db, username, password)
-    access_token = create_access_token(data={"sub": str(user.id)})
-    response = RedirectResponse(url="/dashboard", status_code=303)
-    response.set_cookie(
-        key="access_token",
-        value=access_token,
-        httponly=True,
-        max_age=60*60*24*30,
-        samesite="lax"
-    )
-    return response
+    request.session["user_id"] = user.id
+    return JSONResponse(content={"success": True, "user_id": user.id, "username": user.username})
 
-@app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request, error: str = None):
-    return templates.TemplateResponse("login.html", {"request": request, "error": error})
-
-@app.post("/login")
+@app.post("/api/login")
 async def login(request: Request, username: str = Form(...), password: str = Form(...), db: AsyncSession = Depends(get_db)):
     user = await authenticate_user(db, username, password)
     if not user:
-        return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный логин или пароль"})
-    access_token = create_access_token(data={"sub": str(user.id)})
-    response = RedirectResponse(url="/dashboard", status_code=303)
-    response.set_cookie(
-        key="access_token",
-        value=access_token,
-        httponly=True,
-        max_age=60*60*24*30,
-        samesite="lax"
-    )
-    return response
+        return JSONResponse(status_code=401, content={"error": "Неверный логин или пароль"})
+    request.session["user_id"] = user.id
+    return JSONResponse(content={"success": True, "user_id": user.id, "username": user.username})
 
-@app.get("/dashboard", response_class=HTMLResponse)
-async def dashboard(request: Request, db: AsyncSession = Depends(get_db)):
+@app.post("/api/logout")
+async def logout(request: Request):
+    request.session.clear()
+    return JSONResponse(content={"success": True})
+
+@app.get("/api/aquariums")
+async def get_aquariums(request: Request, db: AsyncSession = Depends(get_db)):
     user = await get_current_user(request, db)
     if not user:
-        return RedirectResponse(url="/login", status_code=303)
+        return JSONResponse(status_code=401, content={"error": "Not authenticated"})
     result = await db.execute(select(Aquarium).where(Aquarium.user_id == user.id))
     aquariums = result.scalars().all()
-    return templates.TemplateResponse("dashboard.html", {"request": request, "aquariums": aquariums, "user": user})
+    return JSONResponse(content=[{
+        "id": a.id,
+        "name": a.name,
+        "created_at": a.created_at.isoformat() if a.created_at else None,
+        "inhabitants": a.inhabitants,
+        "photo": a.photo
+    } for a in aquariums])
 
-@app.get("/profile", response_class=HTMLResponse)
-async def profile_page(request: Request, db: AsyncSession = Depends(get_db)):
-    user = await get_current_user(request, db)
-    if not user:
-        return RedirectResponse(url="/login", status_code=303)
-    return templates.TemplateResponse("profile.html", {"request": request, "user": user})
-
-@app.post("/profile/change-password")
-async def change_password(request: Request, old_password: str = Form(...), new_password: str = Form(...), confirm_password: str = Form(...), db: AsyncSession = Depends(get_db)):
-    user = await get_current_user(request, db)
-    if not user:
-        return RedirectResponse(url="/login", status_code=303)
-    
-    if new_password != confirm_password:
-        return templates.TemplateResponse("profile.html", {"request": request, "user": user, "error": "Новые пароли не совпадают"})
-    
-    if not verify_password(old_password, user.password_hash):
-        return templates.TemplateResponse("profile.html", {"request": request, "user": user, "error": "Неверный текущий пароль"})
-    
-    user.password_hash = hash_password(new_password)
-    await db.commit()
-    
-    return templates.TemplateResponse("profile.html", {"request": request, "user": user, "success": "Пароль успешно изменен"})
-
-@app.get("/aquarium/create", response_class=HTMLResponse)
-async def create_aquarium_page(request: Request, db: AsyncSession = Depends(get_db)):
-    user = await get_current_user(request, db)
-    if not user:
-        return RedirectResponse(url="/login", status_code=303)
-    result = await db.execute(select(Parameter))
-    parameters = result.scalars().all()
-    inhabitants = list(INHABITANT_PARAMETERS.keys())
-    return templates.TemplateResponse("aquarium_create.html", {"request": request, "parameters": parameters, "inhabitants": inhabitants})
-
-@app.post("/aquarium/create")
+@app.post("/api/aquariums")
 async def create_aquarium(request: Request, name: str = Form(...), inhabitants: str = Form(...), parameters: List[int] = Form(...), photo: str = Form(None), db: AsyncSession = Depends(get_db)):
     current_user = await get_current_user(request, db)
     if not current_user:
-        return RedirectResponse(url="/login", status_code=303)
+        return JSONResponse(status_code=401, content={"error": "Not authenticated"})
+    
+    if not name or len(name.strip()) == 0:
+        return JSONResponse(status_code=400, content={"error": "Название аквариума не может быть пустым"})
+    
     if len(parameters) == 0:
-        result = await db.execute(select(Parameter))
-        params = result.scalars().all()
-        inhabitants_list = list(INHABITANT_PARAMETERS.keys())
-        return templates.TemplateResponse("aquarium_create.html", {"request": request, "error": "Выберите хотя бы один параметр", "parameters": params, "inhabitants": inhabitants_list})
-    aquarium = Aquarium(name=name, user_id=current_user.id, inhabitants=inhabitants, photo=photo if photo and photo.strip() else None)
+        return JSONResponse(status_code=400, content={"error": "Выберите хотя бы один параметр"})
+    
+    aquarium = Aquarium(name=name.strip(), user_id=current_user.id, inhabitants=inhabitants, photo=photo if photo and photo.strip() else None)
     db.add(aquarium)
     await db.flush()
     for param_id in parameters:
         db.add(AquariumParameter(aquarium_id=aquarium.id, parameter_id=param_id))
     await db.commit()
-    return RedirectResponse(url="/dashboard", status_code=303)
+    return JSONResponse(content={"id": aquarium.id, "name": aquarium.name})
 
-@app.post("/aquarium/delete/{aquarium_id}")
+@app.delete("/api/aquariums/{aquarium_id}")
 async def delete_aquarium(aquarium_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     user = await get_current_user(request, db)
     if not user:
-        return RedirectResponse(url="/login", status_code=303)
+        return JSONResponse(status_code=401, content={"error": "Not authenticated"})
     await db.execute(delete(Aquarium).where(Aquarium.id == aquarium_id, Aquarium.user_id == user.id))
     await db.commit()
-    return RedirectResponse(url="/dashboard", status_code=303)
+    return JSONResponse(content={"success": True})
 
-@app.get("/aquarium/{aquarium_id}", response_class=HTMLResponse)
-async def aquarium_detail(request: Request, aquarium_id: int, db: AsyncSession = Depends(get_db)):
+@app.get("/api/aquariums/{aquarium_id}")
+async def get_aquarium(aquarium_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     user = await get_current_user(request, db)
     if not user:
-        return RedirectResponse(url="/login", status_code=303)
+        return JSONResponse(status_code=401, content={"error": "Not authenticated"})
     result = await db.execute(select(Aquarium).where(Aquarium.id == aquarium_id, Aquarium.user_id == user.id))
     aquarium = result.scalar_one_or_none()
     if not aquarium:
-        return RedirectResponse(url="/dashboard", status_code=303)
+        return JSONResponse(status_code=404, content={"error": "Aquarium not found"})
+    
     result_params = await db.execute(select(AquariumParameter).where(AquariumParameter.aquarium_id == aquarium_id))
     aquarium_params = result_params.scalars().all()
     param_ids = [ap.parameter_id for ap in aquarium_params]
     result_params_list = await db.execute(select(Parameter).where(Parameter.id.in_(param_ids)))
     parameters = result_params_list.scalars().all()
-    param_dict = {p.name: {"id": p.id, "display_name": p.display_name, "unit": p.unit} for p in parameters}
-    result_measurements = await db.execute(select(Measurement).where(Measurement.aquarium_id == aquarium_id).order_by(desc(Measurement.date)).limit(50))
-    measurements = result_measurements.scalars().all()
-    measurements_data = []
+    
+    return JSONResponse(content={
+        "id": aquarium.id,
+        "name": aquarium.name,
+        "inhabitants": aquarium.inhabitants,
+        "photo": aquarium.photo,
+        "parameters": [{"id": p.id, "name": p.name, "display_name": p.display_name, "unit": p.unit} for p in parameters]
+    })
+
+@app.get("/api/parameters")
+async def get_parameters_api(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Parameter))
+    params = result.scalars().all()
+    return JSONResponse(content=[{"id": p.id, "name": p.name, "display_name": p.display_name, "unit": p.unit} for p in params])
+
+@app.get("/api/aquariums/{aquarium_id}/measurements")
+async def get_measurements(aquarium_id: int, start_date: str = None, end_date: str = None, db: AsyncSession = Depends(get_db)):
+    query = select(Measurement).where(Measurement.aquarium_id == aquarium_id)
+    if start_date:
+        query = query.where(Measurement.date >= datetime.strptime(start_date, "%Y-%m-%d").date())
+    if end_date:
+        query = query.where(Measurement.date <= datetime.strptime(end_date, "%Y-%m-%d").date())
+    query = query.order_by(Measurement.date)
+    result = await db.execute(query)
+    measurements = result.scalars().all()
+    result_list = []
     for m in measurements:
         param_result = await db.execute(select(Parameter).where(Parameter.id == m.parameter_id))
         param = param_result.scalar_one_or_none()
-        measurements_data.append({
+        result_list.append({
             "id": m.id,
             "date": m.date.strftime("%Y-%m-%d"),
-            "parameter_name": param.name if param else "unknown",
+            "parameter": param.name if param else "unknown",
             "parameter_display": param.display_name if param else "Unknown",
             "value": float(m.value),
             "unit": param.unit if param else ""
         })
-    return templates.TemplateResponse("aquarium_detail.html", {
-        "request": request,
-        "aquarium": aquarium,
-        "parameters": parameters,
-        "measurements": measurements_data,
-        "param_dict": param_dict
-    })
+    return JSONResponse(content=result_list)
 
-@app.post("/aquarium/{aquarium_id}/measurement")
+@app.post("/api/aquariums/{aquarium_id}/measurements")
 async def add_measurement(request: Request, aquarium_id: int, date_str: str = Form(...), values: str = Form(...), db: AsyncSession = Depends(get_db)):
     user = await get_current_user(request, db)
     if not user:
-        return RedirectResponse(url="/login", status_code=303)
+        return JSONResponse(status_code=401, content={"error": "Не авторизован"})
+    
     result = await db.execute(select(Aquarium).where(Aquarium.id == aquarium_id, Aquarium.user_id == user.id))
     aquarium = result.scalar_one_or_none()
     if not aquarium:
-        return RedirectResponse(url="/dashboard", status_code=303)
+        return JSONResponse(status_code=404, content={"error": "Аквариум не найден"})
+    
     try:
         measurement_date = datetime.strptime(date_str, "%Y-%m-%d").date()
     except:
         measurement_date = date.today()
-    values_dict = json.loads(values)
+    
+    try:
+        values_dict = json.loads(values)
+    except:
+        return JSONResponse(status_code=400, content={"error": "Неверный формат данных"})
+    
     for param_name, value in values_dict.items():
+        try:
+            value = float(value)
+        except (ValueError, TypeError):
+            return JSONResponse(status_code=400, content={"error": f"Некорректное значение для параметра {param_name}"})
+        
+        if value < 0:
+            return JSONResponse(status_code=400, content={"error": f"Значение параметра {param_name} не может быть отрицательным"})
+        
+        if param_name == "temperature" and value > 50:
+            return JSONResponse(status_code=400, content={"error": "Температура не может быть выше 50°C"})
+        if param_name == "ph" and (value < 0 or value > 14):
+            return JSONResponse(status_code=400, content={"error": "pH должен быть в диапазоне 0-14"})
+        
         param_result = await db.execute(select(Parameter).where(Parameter.name == param_name))
         param = param_result.scalar_one_or_none()
         if param:
@@ -249,31 +281,11 @@ async def add_measurement(request: Request, aquarium_id: int, date_str: str = Fo
                     date=measurement_date,
                     value=value
                 ))
+    
     await db.commit()
-    return RedirectResponse(url=f"/aquarium/{aquarium_id}", status_code=303)
+    return JSONResponse(content={"success": True})
 
-@app.get("/api/measurements/{aquarium_id}")
-async def get_measurements_api(aquarium_id: int, start_date: str = None, end_date: str = None, db: AsyncSession = Depends(get_db)):
-    query = select(Measurement).where(Measurement.aquarium_id == aquarium_id)
-    if start_date:
-        query = query.where(Measurement.date >= datetime.strptime(start_date, "%Y-%m-%d").date())
-    if end_date:
-        query = query.where(Measurement.date <= datetime.strptime(end_date, "%Y-%m-%d").date())
-    query = query.order_by(Measurement.date)
-    result = await db.execute(query)
-    measurements = result.scalars().all()
-    result_list = []
-    for m in measurements:
-        param_result = await db.execute(select(Parameter).where(Parameter.id == m.parameter_id))
-        param = param_result.scalar_one_or_none()
-        result_list.append({
-            "date": m.date.strftime("%Y-%m-%d"),
-            "parameter": param.name if param else "unknown",
-            "value": float(m.value)
-        })
-    return result_list
-
-@app.get("/api/measurements_pivot/{aquarium_id}")
+@app.get("/api/aquariums/{aquarium_id}/measurements_pivot")
 async def get_measurements_pivot(aquarium_id: int, start_date: str = None, end_date: str = None, parameters: str = None, db: AsyncSession = Depends(get_db)):
     query = select(Measurement).where(Measurement.aquarium_id == aquarium_id)
     if start_date:
@@ -313,20 +325,17 @@ async def get_measurements_pivot(aquarium_id: int, start_date: str = None, end_d
     
     result_list = sorted(pivot_data.values(), key=lambda x: x["date"])
     
-    return {"data": result_list, "parameters": [{"name": p.name, "display_name": p.display_name, "unit": p.unit} for p in display_parameters]}
-
-@app.get("/api/parameters")
-async def get_parameters_api(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Parameter))
-    params = result.scalars().all()
-    return [{"id": p.id, "name": p.name, "display_name": p.display_name, "unit": p.unit} for p in params]
+    return JSONResponse(content={
+        "data": result_list,
+        "parameters": [{"name": p.name, "display_name": p.display_name, "unit": p.unit} for p in display_parameters]
+    })
 
 @app.get("/api/recommendations/{aquarium_id}")
 async def get_recommendations_api(aquarium_id: int, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Aquarium).where(Aquarium.id == aquarium_id))
     aquarium = result.scalar_one_or_none()
     if not aquarium:
-        return {"recommendations": []}
+        return JSONResponse(content={"recommendations": [], "has_issues": False})
     result_meas = await db.execute(select(Measurement).where(Measurement.aquarium_id == aquarium_id).order_by(desc(Measurement.date)).limit(20))
     latest_measurements = result_meas.scalars().all()
     measurements_by_param = {}
@@ -336,17 +345,17 @@ async def get_recommendations_api(aquarium_id: int, db: AsyncSession = Depends(g
         if param and param.name not in measurements_by_param:
             measurements_by_param[param.name] = float(m.value)
     recs = get_recommendations(aquarium.inhabitants, measurements_by_param)
-    return {"recommendations": recs, "has_issues": len(recs) > 0}
+    return JSONResponse(content={"recommendations": recs, "has_issues": len(recs) > 0})
 
-@app.get("/aquarium/{aquarium_id}/export")
+@app.get("/api/aquariums/{aquarium_id}/export")
 async def export_csv(aquarium_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     user = await get_current_user(request, db)
     if not user:
-        return RedirectResponse(url="/login", status_code=303)
+        return JSONResponse(status_code=401, content={"error": "Not authenticated"})
     result = await db.execute(select(Aquarium).where(Aquarium.id == aquarium_id, Aquarium.user_id == user.id))
     aquarium = result.scalar_one_or_none()
     if not aquarium:
-        return RedirectResponse(url="/dashboard", status_code=303)
+        return JSONResponse(status_code=404, content={"error": "Aquarium not found"})
     result_meas = await db.execute(select(Measurement).where(Measurement.aquarium_id == aquarium_id).order_by(Measurement.date))
     measurements = result_meas.scalars().all()
     data = []
@@ -365,8 +374,19 @@ async def export_csv(aquarium_id: int, request: Request, db: AsyncSession = Depe
     output.seek(0)
     return StreamingResponse(iter([output.getvalue().encode("utf-8-sig")]), media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=aquarium_{aquarium_id}_export.csv"})
 
-@app.post("/logout")
-async def logout(request: Request):
-    response = RedirectResponse(url="/", status_code=303)
-    response.delete_cookie("access_token")
-    return response
+@app.post("/api/profile/change-password")
+async def change_password(request: Request, old_password: str = Form(...), new_password: str = Form(...), confirm_password: str = Form(...), db: AsyncSession = Depends(get_db)):
+    user = await get_current_user(request, db)
+    if not user:
+        return JSONResponse(status_code=401, content={"error": "Not authenticated"})
+    
+    if new_password != confirm_password:
+        return JSONResponse(status_code=400, content={"error": "Новые пароли не совпадают"})
+    
+    if not verify_password(old_password, user.password_hash):
+        return JSONResponse(status_code=400, content={"error": "Неверный текущий пароль"})
+    
+    user.password_hash = hash_password(new_password)
+    await db.commit()
+    
+    return JSONResponse(content={"success": True})

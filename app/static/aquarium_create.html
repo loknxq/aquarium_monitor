@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Создание аквариума - AquaMonitor</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="header">
+        <div class="header-content">
+            <h1>Новый аквариум</h1>
+            <a href="/dashboard" class="btn btn-outline">← Назад</a>
+        </div>
+    </div>
+    <div class="container">
+        <div class="card">
+            <div id="error" class="error" style="display:none"></div>
+            <form id="createForm">
+                <div class="form-group">
+                    <label>Название аквариума</label>
+                    <input type="text" id="name" class="form-control" required>
+                </div>
+                <div class="form-group">
+                    <label>Основные обитатели</label>
+                    <select id="inhabitants" class="form-control">
+                        <option value="tropical_fish">Тропические рыбы</option>
+                        <option value="goldfish">Золотые рыбки</option>
+                        <option value="shrimp">Креветки</option>
+                        <option value="cichlids">Цихлиды</option>
+                        <option value="plants">Растения</option>
+                        <option value="marine">Морской аквариум</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Фото аквариума</label>
+                    <input type="file" id="photo_input" accept="image/jpeg,image/png">
+                    <input type="hidden" id="photo_base64">
+                    <img id="photo_preview" style="max-width: 200px; margin-top: 10px; display: none;">
+                </div>
+                <div class="form-group">
+                    <label>Отслеживаемые параметры</label>
+                    <div id="parameters_checkboxes" class="checkbox-group"></div>
+                </div>
+                <button type="submit" class="btn">Создать</button>
+            </form>
+        </div>
+    </div>
+    <script src="/static/js/aquarium_create.js"></script>
+</body>
+</html>

@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Аквариум - AquaMonitor</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+
+<body>
+    <div class="header">
+        <div class="header-content">
+            <h1 id="aquariumName"></h1>
+            <div style="display: flex; gap: 10px; margin-top: 10px;">
+                <a href="/dashboard" class="btn btn-outline">← К списку</a>
+                <a href="/profile" class="btn btn-outline">Личный кабинет</a>
+            </div>
+        </div>
+    </div>
+
+    <div id="errorMessage" class="error" style="display:none; position: fixed; top: 20px; right: 20px; z-index: 1000;">
+    </div>
+    <div class="container">
+        <div id="recommendations"></div>
+        <div class="tabs">
+            <div class="tab active" onclick="showTab('add-tab')">Добавить замер</div>
+            <div class="tab" onclick="showTab('history-tab')">История и графики</div>
+        </div>
+        <div id="add-tab" class="tab-content active">
+            <div class="card">
+                <h3>Новый замер</h3>
+                <div class="form-group">
+                    <label>Дата</label>
+                    <input type="date" id="measurement_date" class="form-control">
+                </div>
+                <div id="parameters_inputs"></div>
+                <button onclick="addMeasurement()" class="btn">Сохранить замер</button>
+            </div>
+        </div>
+        <div id="history-tab" class="tab-content">
+            <div class="card">
+                <div class="filter-group">
+                    <div class="form-group" style="flex:1;">
+                        <label>С</label>
+                        <input type="date" id="start_date" class="form-control">
+                    </div>
+                    <div class="form-group" style="flex:1;">
+                        <label>По</label>
+                        <input type="date" id="end_date" class="form-control">
+                    </div>
+                    <button onclick="applyFilter()" class="btn">Применить</button>
+                    <button onclick="exportData()" class="btn">Экспорт CSV</button>
+                </div>
+                <div class="form-group">
+                    <label>Параметры для отображения</label>
+                    <div id="param_checkboxes" class="checkbox-group"></div>
+                </div>
+                <div class="chart-container">
+                    <canvas id="measurementChart"></canvas>
+                </div>
+                <div class="table-container">
+                    <table id="measurementsTable">
+                        <thead id="tableHeader">
+                            <tr>
+                                <th>Дата</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="/static/js/aquarium_detail.js">
+        function validateNumber(input) {
+            let value = input.value;
+            if (value === '') return;
+            let num = parseFloat(value);
+            if (isNaN(num) || num < 0) {
+                input.value = '';
+                alert('Значение должно быть положительным числом');
+            }
+        }
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            setTimeout(() => {
+                errorDiv.style.display = 'none';
+            }, 3000);
+        }
+    </script>
+</body>
+
+</html>
