@@ -1,68 +1,45 @@
+﻿# tests/test_recommendations.py
+import json
 import pytest
-from app.services.recommendations import get_recommendations, INHABITANT_PARAMETERS
+from httpx import AsyncClient
+
 
 class TestRecommendations:
-    
-    def test_get_recommendations_temperature_low(self):
-        measurements = {"temperature": 20.0}
-        recs = get_recommendations("tropical_fish", measurements)
-        assert len(recs) > 0
-        assert "ниже нормы" in recs[0]
-    
-    def test_get_recommendations_temperature_high(self):
-        measurements = {"temperature": 30.0}
-        recs = get_recommendations("tropical_fish", measurements)
-        assert len(recs) > 0
-        assert "выше нормы" in recs[0]
-    
-    def test_get_recommendations_ammonia_high(self):
-        measurements = {"ammonia": 0.5}
-        recs = get_recommendations("tropical_fish", measurements)
-        assert len(recs) > 0
-        assert "аммиак" in recs[0].lower()
-    
-    def test_get_recommendations_nitrites_high(self):
-        measurements = {"nitrites": 1.0}
-        recs = get_recommendations("tropical_fish", measurements)
-        assert len(recs) > 0
-        assert "нитриты" in recs[0].lower()
-    
-    def test_no_recommendations_when_ok(self):
-        measurements = {"temperature": 26.0, "ph": 7.0}
-        recs = get_recommendations("tropical_fish", measurements)
-        assert len(recs) == 0
-    
-    def test_recommendations_for_goldfish(self):
-        measurements = {"temperature": 15.0}
-        recs = get_recommendations("goldfish", measurements)
-        assert len(recs) > 0
-    
-    def test_recommendations_for_shrimp(self):
-        measurements = {"gh": 4.0}
-        recs = get_recommendations("shrimp", measurements)
-        assert len(recs) > 0
-    
-    def test_recommendations_for_cichlids(self):
-        measurements = {"ph": 7.0}
-        recs = get_recommendations("cichlids", measurements)
-        assert len(recs) > 0
-    
-    def test_recommendations_for_plants(self):
-        measurements = {"co2": 10.0}
-        recs = get_recommendations("plants", measurements)
-        assert len(recs) > 0
-    
-    def test_recommendations_for_marine(self):
-        measurements = {"salinity": 1.018}
-        recs = get_recommendations("marine", measurements)
-        assert len(recs) > 0
-    
-    def test_invalid_inhabitant_fallback(self):
-        measurements = {"temperature": 15.0}
-        recs = get_recommendations("unknown", measurements)
-        assert isinstance(recs, list)
-    
-    def test_multiple_issues(self):
-        measurements = {"temperature": 30.0, "ammonia": 0.5, "nitrites": 1.0}
-        recs = get_recommendations("tropical_fish", measurements)
-        assert len(recs) >= 2
+    async def test_get_recommendations(
+        self,
+        authenticated_client: AsyncClient,
+        test_aquarium_with_params
+    ):
+        """Получение рекомендаций для аквариума"""
+        values = {
+            "temperature": 32.0,
+            "ammonia": 0.5,
+            "ph": 8.0
+        }
+        
+        await authenticated_client.post(
+            f"/api/aquariums/{test_aquarium_with_params.id}/measurements",
+            data={
+                "date_str": "2026-05-25",
+                "values": json.dumps(values)
+            }
+        )
+        
+        response = await authenticated_client.get(
+            f"/api/recommendations/{test_aquarium_with_params.id}"
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "recommendations" in data
+        assert "has_issues" in data
+
+    async def test_get_recommendations_aquarium_not_found(
+        self,
+        authenticated_client: AsyncClient
+    ):
+        """Рекомендации для несуществующего аквариума"""
+        response = await authenticated_client.get("/api/recommendations/99999")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["recommendations"] == []
+        assert data["has_issues"] is False

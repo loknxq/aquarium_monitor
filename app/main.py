@@ -70,7 +70,6 @@ async def startup():
     async for db in get_db():
         await init_parameters(db)
         break
-
 # HTML страницы
 @app.get("/")
 async def index():

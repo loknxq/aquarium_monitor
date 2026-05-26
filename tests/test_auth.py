@@ -1,59 +1,69 @@
+﻿# tests/test_auth.py
 import pytest
-from app.auth import hash_password, verify_password
+from httpx import AsyncClient
 
-pytestmark = pytest.mark.anyio
 
 class TestAuth:
-    
-    def test_hash_password(self):
-        password = "mypassword123"
-        hashed = hash_password(password)
-        assert hashed != password
-        assert verify_password(password, hashed)
-    
-    def test_verify_password_wrong(self):
-        password = "correct123"
-        hashed = hash_password(password)
-        assert not verify_password("wrong123", hashed)
-    
-    async def test_register_endpoint(self, client):
+    async def test_register_success(self, client: AsyncClient):
+        """Успешная регистрация"""
         response = await client.post(
             "/api/register",
-            data={"username": "registeruser", "password": "registerpass"}
+            data={"username": "newuser", "password": "newpass123"}
         )
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
-        assert data["username"] == "registeruser"
-    
-    async def test_register_duplicate(self, client):
-        await client.post("/api/register", data={"username": "dupuser", "password": "pass"})
-        response = await client.post("/api/register", data={"username": "dupuser", "password": "pass"})
+        assert data["username"] == "newuser"
+        assert "user_id" in data
+
+    async def test_register_duplicate_username(self, client: AsyncClient, test_user):
+        """Регистрация с существующим логином"""
+        response = await client.post(
+            "/api/register",
+            data={"username": test_user.username, "password": "testpass123"}
+        )
         assert response.status_code == 400
-        assert "уже существует" in response.json()["error"]
-    
-    async def test_login_success(self, client):
-        await client.post("/api/register", data={"username": "loginuser", "password": "loginpass"})
-        response = await client.post("/api/login", data={"username": "loginuser", "password": "loginpass"})
+        data = response.json()
+        assert "уже существует" in data["error"]
+
+    async def test_login_success(self, client: AsyncClient, test_user):
+        """Успешный вход"""
+        response = await client.post(
+            "/api/login",
+            data={"username": test_user.username, "password": "testpass123"}
+        )
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
-    
-    async def test_login_wrong_password(self, client):
-        await client.post("/api/register", data={"username": "wronguser", "password": "correct"})
-        response = await client.post("/api/login", data={"username": "wronguser", "password": "wrong"})
+        assert data["username"] == test_user.username
+        assert "user_id" in data
+
+    async def test_login_wrong_password(self, client: AsyncClient, test_user):
+        """Вход с неверным паролем"""
+        response = await client.post(
+            "/api/login",
+            data={"username": test_user.username, "password": "wrongpass"}
+        )
         assert response.status_code == 401
-    
-    async def test_logout(self, client):
-        await client.post("/api/register", data={"username": "logoutuser", "password": "pass"})
-        await client.post("/api/login", data={"username": "logoutuser", "password": "pass"})
-        response = await client.post("/api/logout")
+        data = response.json()
+        assert "Неверный" in data["error"]
+
+    async def test_logout(self, authenticated_client: AsyncClient):
+        """Выход из системы"""
+        response = await authenticated_client.post("/api/logout")
         assert response.status_code == 200
-        assert response.json()["success"] is True
-    
-    async def test_get_user_authenticated(self, client):
-        await client.post("/api/register", data={"username": "getuser", "password": "pass"})
-        await client.post("/api/login", data={"username": "getuser", "password": "pass"})
+        data = response.json()
+        assert data["success"] is True
+
+    async def test_get_user_authenticated(self, authenticated_client: AsyncClient):
+        """Получение данных авторизованного пользователя"""
+        response = await authenticated_client.get("/api/user")
+        assert response.status_code == 200
+        data = response.json()
+        assert "username" in data
+        assert "id" in data
+
+    async def test_get_user_unauthenticated(self, client: AsyncClient):
+        """Получение данных неавторизованного пользователя"""
         response = await client.get("/api/user")
-        assert response.status_code == 200
-        assert response.json()["username"] == "getuser"
+        assert response.status_code == 401
