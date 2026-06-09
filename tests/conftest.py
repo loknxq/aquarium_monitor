@@ -1,4 +1,4 @@
-﻿# tests/conftest.py
+﻿
 import pytest
 import asyncio
 from typing import AsyncGenerator
@@ -170,7 +170,6 @@ async def authenticated_client(client: AsyncClient, db_session: AsyncSession):
     db_session.add(user)
     await db_session.commit()
     
-    # Логинимся
     response = await client.post(
         "/api/login",
         data={"username": "authuser", "password": "authpass123"}

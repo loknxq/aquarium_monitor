@@ -1,4 +1,4 @@
-﻿# tests/test_aquariums.py
+﻿
 import pytest
 from httpx import AsyncClient
 

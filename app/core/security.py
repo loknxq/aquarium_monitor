@@ -1,11 +1,10 @@
-# app/core/security.py
+
 from passlib.context import CryptContext
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from app.core.config import settings
 
-# Используем sha256_crypt для совместимости с app/auth.py
 pwd_context = CryptContext(schemes=["sha256_crypt"], deprecated="auto")
 
 def hash_password(password: str) -> str:

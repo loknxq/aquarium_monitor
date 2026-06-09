@@ -1,10 +1,9 @@
-# app/auth.py
+
 from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.models.user import User
 
-# Используем sha256_crypt для совместимости с security.py
 pwd_context = CryptContext(schemes=["sha256_crypt"], deprecated="auto")
 
 def hash_password(password: str) -> str:

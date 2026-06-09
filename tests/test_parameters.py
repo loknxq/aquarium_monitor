@@ -1,4 +1,4 @@
-﻿# tests/test_parameters.py
+﻿
 import pytest
 from httpx import AsyncClient
 
@@ -7,14 +7,13 @@ class TestParameters:
     async def test_get_parameters(
         self,
         client: AsyncClient,
-        test_parameters  # фикстура уже создает параметры
+        test_parameters 
     ):
         """Получение списка всех параметров"""
         response = await client.get("/api/parameters")
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, list)
-        # Параметры должны быть созданы фикстурой test_parameters
         assert len(data) >= 5
         
         if data:
@@ -27,7 +26,7 @@ class TestParameters:
     async def test_parameters_contain_expected(
         self,
         client: AsyncClient,
-        test_parameters  # фикстура создает параметры
+        test_parameters 
     ):
         """Проверка наличия основных параметров"""
         response = await client.get("/api/parameters")

@@ -1,4 +1,4 @@
-﻿# tests/test_integration.py
+﻿
 import json
 import pytest
 from httpx import AsyncClient
@@ -16,17 +16,12 @@ class TestIntegration:
         assert register_response.status_code == 200
         register_data = register_response.json()
         assert register_data["success"] is True
-        
-        # 2. Получение параметров (создаем через API, так как БД чистая)
-        # Сначала нужно создать параметры через API или напрямую в БД
-        # В main.py есть init_parameters, но она вызывается при старте
-        # Поэтому получаем параметры - они должны быть созданы
+
         
         params_response = await client.get("/api/parameters")
         assert params_response.status_code == 200
         parameters = params_response.json()
         
-        # Если параметров нет, тест пропускаем (но в реальности они создаются при старте)
         if len(parameters) == 0:
             pytest.skip("No parameters found in database")
         

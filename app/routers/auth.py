@@ -19,9 +19,7 @@ async def register(
     user_data: UserCreate,
     db: AsyncSession = Depends(get_db)
 ):
-    """Регистрация нового пользователя"""
     
-    # Проверяем, существует ли пользователь
     result = await db.execute(
         select(User).where(User.username == user_data.username)
     )
@@ -33,7 +31,6 @@ async def register(
             detail="Username already registered"
         )
     
-    # Создаем нового пользователя
     hashed_password = hash_password(user_data.password)
     new_user = User(
         username=user_data.username,
@@ -52,9 +49,7 @@ async def login(
     login_data: UserLogin,
     db: AsyncSession = Depends(get_db)
 ):
-    """Логин пользователя"""
     
-    # Ищем пользователя
     result = await db.execute(
         select(User).where(User.username == login_data.username)
     )
@@ -73,7 +68,6 @@ async def login(
             detail="Inactive user"
         )
     
-    # Создаем токены
     access_token = create_access_token(
         data={"sub": str(user.id), "username": user.username}
     )
@@ -81,12 +75,11 @@ async def login(
         data={"sub": str(user.id), "username": user.username}
     )
     
-    # Устанавливаем refresh token в cookie (HttpOnly для безопасности)
     response.set_cookie(
         key="refresh_token",
         value=refresh_token,
         httponly=True,
-        secure=True,  # В production обязательно
+        secure=True, 
         samesite="lax",
         max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
     )
@@ -130,7 +123,6 @@ async def refresh_token(
             detail="User not found or inactive"
         )
     
-    # Создаем новый access token
     new_access_token = create_access_token(
         data={"sub": str(user.id), "username": user.username}
     )
@@ -142,7 +134,6 @@ async def logout(
     response: Response,
     current_user: User = Depends(get_current_user)
 ):
-    """Выход из системы"""
     response.delete_cookie("refresh_token")
     return {"message": "Successfully logged out"}
 
@@ -150,5 +141,4 @@ async def logout(
 async def get_current_user_info(
     current_user: User = Depends(get_current_user)
 ):
-    """Получение информации о текущем пользователе"""
     return current_user

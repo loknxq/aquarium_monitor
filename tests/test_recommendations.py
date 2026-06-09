@@ -1,4 +1,4 @@
-﻿# tests/test_recommendations.py
+﻿
 import json
 import pytest
 from httpx import AsyncClient

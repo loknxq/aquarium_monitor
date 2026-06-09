@@ -1,4 +1,4 @@
-﻿# tests/test_profile.py
+﻿
 import pytest
 from httpx import AsyncClient
 
@@ -17,12 +17,10 @@ class TestProfile:
                 "confirm_password": "newpass123"
             }
         )
-        # API может вернуть 200 или 400 в зависимости от реализации
         if response.status_code == 200:
             data = response.json()
             assert data["success"] is True
         else:
-            # Если не прошло, проверяем что есть сообщение об ошибке
             data = response.json()
             assert "error" in data
 
@@ -39,7 +37,7 @@ class TestProfile:
                 "confirm_password": "newpass123"
             }
         )
-        # Должен вернуть ошибку
+     
         assert response.status_code in [400, 401]
         data = response.json()
         assert "error" in data
